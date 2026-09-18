@@ -1,0 +1,9 @@
+{"version": 2, "width": 104, "height": 18, "timestamp": 1789730422, "env": {"SHELL": "/data/data/com.termux/files/usr/bin/bash", "TERM": "xterm-256color"}}
+[0.021165, "o", "\u001b[1;32m$\u001b[0m dsh id\r\n"]
+[0.821132, "o", "uid=2000(shell) gid=2000(shell) groups=2000(shell),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:shell:s0\r\n"]
+[0.824892, "o", "\r\n"]
+[1.338619, "o", "\u001b[1;32m$\u001b[0m dsh 'dumpsys battery | grep -m1 level'\r\n"]
+[2.164381, "o", "  level: 50\r\n"]
+[2.169273, "o", "\r\n"]
+[2.678169, "o", "\u001b[1;32m$\u001b[0m dsh 'exit 7'; echo exit=$?\r\n"]
+[3.467133, "o", "exit=7\r\n\r\n"]
