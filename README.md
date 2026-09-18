@@ -76,9 +76,14 @@ and with the privilege in mind.
   - `adbwifi-helper/` — a tiny receiver-only Android app (not Shizuku, not
     Termux's APK) that flips the Wireless Debugging toggle back on **in
     software**, with no adb. See its own README.
-- **`maintain/`** — consumes `build/out/`: `deploy.sh` pushes, launches and
-  verifies the daemon. Compiles nothing. Run it by hand, not from a
-  scheduler.
+- **`maintain/`** — consumes `build/out/`:
+  - `deploy.sh` — pushes, launches and verifies the daemon over Wireless
+    Debugging via `adbwire` (and installs `dsh` to `$PREFIX/bin`).
+  - `bootstrap.sh` — the same result **without** Wireless Debugging: pipes
+    the new daemon through the daemon that's already running (payload
+    streaming), sweeps the old one, swaps and relaunches. Needs a live
+    daemon matching the current build; `--no-build` skips the rebuild.
+  - Compiles nothing. Run by hand, not from a scheduler.
 
 ## Policy & audit
 
