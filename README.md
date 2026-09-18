@@ -25,8 +25,6 @@ cannot be, a remote exploit.
 
 ![shell UID from Termux via termux-adb-bridge](assets/demo.gif)
 
-<sub>Real recording of `assets/demo.sh` (`asciinema` → `agg`), not a mockup.</sub>
-
 ## How it works
 
 1. **One-time bootstrap.** `adb shell` (via `adbwire`, no `android-tools`)
