@@ -101,6 +101,27 @@ and with the privilege in mind.
   state (`adb kill-server`), the on-screen touch-gate, or genuine trust
   revocation (rare).
 
+## References
+
+The design was root-caused against primary sources, not guessed. The main
+ones:
+
+- AOSP [`AdbService.java`](https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/services/core/java/com/android/server/adb/AdbService.java)
+  and [`AdbDebuggingManager.java`](https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/services/core/java/com/android/server/adb/AdbDebuggingManager.java)
+  (`frameworks/base/services/core/java/com/android/server/adb/`) — the
+  `ctl.stop adbd` condition and the teardown race.
+- [Linux cgroup v2](https://www.kernel.org/doc/html/v4.18/admin-guide/cgroup-v2.html)
+  — why the daemon is tied to `adbd`'s cgroup, not a debug session.
+- [RFC 6763 §9](https://datatracker.ietf.org/doc/html/rfc6763#section-9) —
+  mDNS-SD name-collision rules behind the stale
+  `_adb-tls-connect._tcp` records.
+- [Shizuku `starter.cpp`](https://github.com/RikkaApps/Shizuku/blob/master/manager/src/main/jni/starter.cpp)
+  and [scrcpy #4639](https://github.com/Genymobile/scrcpy/issues/4639) —
+  prior art for the `app_process`/Wireless-Debugging paths.
+- [GrapheneOS #3770](https://github.com/GrapheneOS/os-issue-tracker/issues/3770)
+  and this [Samsung developer forum thread](https://forum.developer.samsung.com/t/wireless-debugging-or-why-must-samsung-break-things-via-updates/28200)
+  — Wireless-Debugging behavior and OEM variation.
+
 ## License
 
 [GPL-3.0](LICENSE) — any fork or derivative must stay open source under the
