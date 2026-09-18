@@ -1,0 +1,31 @@
+# relaysh policy — optional exact-match allowlist.
+#
+# If this file is named policy.conf (not .example) at build time, build.sh
+# bakes its entries into BOTH relaysh-daemon and relaysh-client, and the
+# daemon then refuses any command that is not listed here byte-for-byte,
+# replying with exit code 77. No policy.conf => allow everything.
+#
+# Matching is EXACT: the whole request string must equal an entry. This is
+# deliberate — commands run through `sh -c`, so a prefix/glob rule could be
+# bypassed with `;`, `&&`, `$(...)`, etc. There are no wildcards, and
+# `allow dumpsys*` would be a bug, not a shortcut.
+#
+# Because matching is exact, allowed commands cannot take variable
+# arguments. For parameterized automation (e.g. `input tap X Y` with
+# runtime coordinates) the next step is an argv (no-shell) request mode —
+# see README "Policy & audit".
+#
+# One `allow <exact command>` per line; blank lines and #-comments ignored.
+
+# --- read-only introspection -------------------------------------------------
+allow id
+allow getprop ro.product.model
+allow getprop ro.serialno
+allow dumpsys battery
+allow pm list packages -3
+
+# --- screen/input (fixed-argument forms only) --------------------------------
+allow screencap -p
+allow uiautomator dump /data/local/tmp/.adb-bridge-dump.xml >/dev/null 2>&1; cat /data/local/tmp/.adb-bridge-dump.xml
+allow logcat -d -t 500
+allow logcat -c

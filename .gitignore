@@ -19,3 +19,7 @@ docs/
 
 # Local scratch/planning notes - not meant for the public repo.
 TODO.md
+
+# Per-device policy (baked into the binaries at build time). The committed
+# example documents the format; the real file is yours.
+build/relaysh/policy.conf

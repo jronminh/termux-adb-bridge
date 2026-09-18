@@ -57,12 +57,49 @@ SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 PORT=$(( (RANDOM << 15 | RANDOM) % 20000 + 40000 ))
 UID_="$(id -u)"
 
+# Optional exact-match policy: if relaysh/policy.conf exists, its
+# `allow <exact command>` lines are baked into BOTH binaries (same as the
+# secret). Absent => allow everything (back-compat). Exact match only:
+# commands run via `sh -c`, so a prefix/glob rule would be bypassable.
+POLICY_CONF="$RELAYSH_SRC/policy.conf"
+POLICY_H="$SCRATCH/relaysh-policy.h"
+if [ -f "$POLICY_CONF" ]; then
+    echo "baking policy from $POLICY_CONF..."
+    python3 - "$POLICY_CONF" > "$POLICY_H" <<'PY'
+import sys
+rules = []
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    for lineno, line in enumerate(f, 1):
+        raw = line.rstrip("\n")
+        if raw.strip() == "" or raw.lstrip().startswith("#"):
+            continue
+        if raw.startswith("allow ") or raw.startswith("allow\t"):
+            rules.append(raw[6:])
+        else:
+            sys.stderr.write("policy.conf:%d: only 'allow <exact command>' lines are supported\n" % lineno)
+            sys.exit(1)
+def cstr(s):
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"').replace("\t", "\\t") + '"'
+print("/* generated from policy.conf by build.sh - do not edit */")
+print("#define RELAYSH_POLICY_PRESENT 1")
+print("static const char* const relaysh_policy_allow[] = {")
+for r in rules:
+    print("    %s," % cstr(r))
+print("    NULL")
+print("};")
+PY
+else
+    printf '%s\n' \
+        '/* no policy.conf at build time - allow all commands */' \
+        '#define RELAYSH_POLICY_PRESENT 0' > "$POLICY_H"
+fi
+
 echo "building relaysh-daemon (port $PORT)..."
 sed -e "s/__TRUSTED_UID_PLACEHOLDER__/$UID_/" \
     -e "s/__TRUSTED_PORT_PLACEHOLDER__/$PORT/" \
     -e "s/__SECRET_PLACEHOLDER__/$SECRET/" \
     "$RELAYSH_SRC/relaysh-daemon.c" > "$SCRATCH/relaysh-daemon.c"
-clang -target aarch64-unknown-linux-android24 -O2 -I"$RELAYSH_SRC" \
+clang -target aarch64-unknown-linux-android24 -O2 -I"$RELAYSH_SRC" -I"$SCRATCH" \
     -o "$OUT_DIR/relaysh-daemon" "$SCRATCH/relaysh-daemon.c" \
     "$RELAYSH_SRC/protocol.c" "$RELAYSH_SRC/relaysh-crypto.c" \
     "$RELAYSH_SRC/sha256.c"
@@ -71,7 +108,7 @@ echo "building relaysh-client (same port + secret)..."
 sed -e "s/__TRUSTED_PORT_PLACEHOLDER__/$PORT/" \
     -e "s/__SECRET_PLACEHOLDER__/$SECRET/" \
     "$RELAYSH_SRC/relaysh-client.c" > "$SCRATCH/relaysh-client.c"
-clang -O2 -I"$RELAYSH_SRC" -o "$OUT_DIR/relaysh-client" \
+clang -O2 -I"$RELAYSH_SRC" -I"$SCRATCH" -o "$OUT_DIR/relaysh-client" \
     "$SCRATCH/relaysh-client.c" "$RELAYSH_SRC/protocol.c" \
     "$RELAYSH_SRC/relaysh-crypto.c" "$RELAYSH_SRC/sha256.c"
 

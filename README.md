@@ -80,6 +80,40 @@ and with the privilege in mind.
   verifies the daemon. Compiles nothing. Run it by hand, not from a
   scheduler.
 
+## Policy & audit
+
+Two optional layers for using the bridge in automation, both off by default.
+
+**Policy (exact-match allowlist).** Put `allow <exact command>` lines in
+`build/relaysh/policy.conf` (see `policy.conf.example`) before running
+`build/build.sh`; the list is baked into **both** binaries, same as the
+secret. With a policy present the daemon refuses anything not listed
+byte-for-byte, replying with stderr `command denied by policy` and exit
+**77**. With no `policy.conf` (the default) everything is allowed, as before.
+
+Matching is exact on purpose: commands run through `sh -c`, so a prefix or
+glob rule (`allow dumpsys*`) is bypassable with `;`, `&&`, or `$(...)` — a
+prefix allowlist would be a bug, not a shortcut. The trade-off is that
+allowed commands can't take variable arguments; parameterized automation
+(e.g. `input tap <x> <y>`) will need a future argv/no-shell request mode.
+
+- `relaysh-client --policy` (and `dsh --policy`) prints the baked list
+  without contacting the daemon.
+
+**Audit log.** Every non-`--check` call appends one line to
+`~/.local/share/relaysh/audit.log` (override with `RELAYSH_AUDIT_LOG`,
+disable with `--no-audit`):
+
+```
+2026-09-18T18:54:53 code=0 decision=allow ms=74 cmd=id
+2026-09-18T18:54:53 code=77 decision=deny ms=46 cmd=id; echo pwned
+```
+
+It's written client-side (Termux UID), so it survives the daemon being down —
+useful for tracing what actually ran. It is a **trace, not tamper-proof
+evidence**: the secret is shared, so a modified client could omit entries.
+Rotates at 1 MiB to `audit.log.1`. Read it with `dsh --audit [N]`.
+
 ## Requirements
 
 - **Android 11+**, where the Wireless Debugging menu exists.

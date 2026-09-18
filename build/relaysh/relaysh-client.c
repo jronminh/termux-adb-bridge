@@ -21,11 +21,13 @@
 #include <limits.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <sys/stat.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include "protocol.h"
 #include "relaysh-crypto.h"
+#include "relaysh-policy.h"
 
 #define HOST "127.0.0.1"
 #define RESPONSE_TIMEOUT_SECONDS 40
@@ -38,6 +40,70 @@ static const int BAKED_PORT = __TRUSTED_PORT_PLACEHOLDER__;
 static const char BAKED_SECRET[] = "__SECRET_PLACEHOLDER__";
 
 static int g_quiet = 0;
+static int g_no_audit = 0;
+
+#define POLICY_DENY_EXIT 77
+#define AUDIT_MAX_BYTES  (1024 * 1024)
+
+// Prints the baked allowlist (or a note that there is none). No daemon
+// round-trip: build.sh compiles the same list into this client.
+static void print_policy(void) {
+#if RELAYSH_POLICY_PRESENT
+    for (size_t i = 0; relaysh_policy_allow[i] != NULL; i++)
+        printf("%s\n", relaysh_policy_allow[i]);
+#else
+    printf("(no policy - all commands allowed)\n");
+#endif
+}
+
+// Appends one audit line to $HOME/.local/share/relaysh/audit.log (or
+// $RELAYSH_AUDIT_LOG). Best-effort: never fails the command. This is a
+// client-side trace, so it stays readable even when the daemon is down —
+// it is evidence for debugging, not a tamper-proof log.
+static void audit_log(const char* cmd, int code, long ms) {
+    if (g_no_audit) return;
+    char path[PATH_MAX];
+    const char* env = getenv("RELAYSH_AUDIT_LOG");
+    if (env && *env) {
+        snprintf(path, sizeof(path), "%s", env);
+    } else {
+        const char* home = getenv("HOME");
+        if (!home || !*home) return;
+        char dir[PATH_MAX];
+        snprintf(dir, sizeof(dir), "%s/.local/share/relaysh", home);
+        mkdir(dir, 0700);
+        snprintf(path, sizeof(path), "%s/audit.log", dir);
+    }
+
+    struct stat st;
+    if (stat(path, &st) == 0 && st.st_size > AUDIT_MAX_BYTES) {
+        char old[PATH_MAX];
+        snprintf(old, sizeof(old), "%s.1", path);
+        rename(path, old);
+    }
+
+    FILE* f = fopen(path, "a");
+    if (!f) return;
+    chmod(path, 0600);
+
+    char ts[32];
+    time_t t = time(NULL);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", &tm);
+
+    char esc[512];
+    size_t j = 0;
+    for (size_t i = 0; cmd[i] && j < sizeof(esc) - 1; i++) {
+        unsigned char c = (unsigned char)cmd[i];
+        esc[j++] = (c == '\n' || c == '\r' || c == '\t') ? ' ' : (char)c;
+    }
+    esc[j] = 0;
+
+    const char* decision = (code == POLICY_DENY_EXIT) ? "deny" : "allow";
+    fprintf(f, "%s code=%d decision=%s ms=%ld cmd=%s\n", ts, code, decision, ms, esc);
+    fclose(f);
+}
 
 static void usage(FILE* out) {
     fputs(
@@ -57,6 +123,9 @@ static void usage(FILE* out) {
 "  -q, --quiet    Suppress this tool's own status/error messages.\n"
 "  -v, --verbose  Print the exact command being sent, to stderr.\n"
 "  --check        Health check: run `id` against the daemon.\n"
+"  --policy       Print the baked exact-match allowlist (or note there is\n"
+"                 none) and exit. No daemon contact.\n"
+"  --no-audit     Do not append to the audit log for this call.\n"
 "  -h, --help     Show this help.\n",
     out);
 }
@@ -235,6 +304,8 @@ int main(int argc, char** argv) {
         else if (strcmp(a, "-q") == 0 || strcmp(a, "--quiet") == 0) g_quiet = 1;
         else if (strcmp(a, "-v") == 0 || strcmp(a, "--verbose") == 0) verbose = 1;
         else if (strcmp(a, "--check") == 0) check = 1;
+        else if (strcmp(a, "--policy") == 0) { print_policy(); return 0; }
+        else if (strcmp(a, "--no-audit") == 0) g_no_audit = 1;
         else if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) { usage(stdout); return 0; }
         else if (strcmp(a, "--") == 0) { i++; break; }
         else if (a[0] == '-' && a[1] != '\0') { char b[64]; snprintf(b, sizeof(b), "unknown option: %s", a); die_usage(b); }
@@ -294,10 +365,13 @@ int main(int argc, char** argv) {
         err_exit(1, "server authentication failed (no daemon, or wrong secret)");
     }
     int code = 0;
+    int64_t t0 = now_ns();
     if (v3_run(fd, &keys, command, opt_p, &code) != 0) {
         close(fd);
+        if (!check) audit_log(command, -1, (long)((now_ns() - t0) / 1000000));
         err_exit(1, "connection failed mid-request (daemon died?)");
     }
     close(fd);
+    if (!check) audit_log(command, code, (long)((now_ns() - t0) / 1000000));
     return code;
 }

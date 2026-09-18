@@ -19,7 +19,14 @@
 //   - stdout and stderr are separate authenticated streams.
 //
 // This is an access point, not an API: authenticate, run exactly the command
-// given, relay what came back. No verbs, no allowlists.
+// given, relay what came back. No verbs.
+//
+// Optional exact-match policy: if build/relaysh/policy.conf existed at build
+// time, its `allow <exact command>` lines are baked in and the daemon refuses
+// anything not listed byte-for-byte (exit 77). Exact match is the only sound
+// server-side rule here because commands run via `sh -c` — a prefix/glob rule
+// is trivially bypassed with `;`/`&&`. No policy.conf => allow everything
+// (back-compat). See README "Policy & audit".
 //
 // The daemon does not try to survive an adbd session recycle (nothing can,
 // without root) — relaysh-deploy.sh recovers it externally.
@@ -40,6 +47,7 @@
 #include <netinet/in.h>
 #include "protocol.h"
 #include "relaysh-crypto.h"
+#include "relaysh-policy.h"
 
 #define TRUSTED_UID __TRUSTED_UID_PLACEHOLDER__
 #define TRUSTED_PORT __TRUSTED_PORT_PLACEHOLDER__
@@ -51,9 +59,21 @@
 #define CONN_IO_TIMEOUT_SECONDS 5
 #define PAYLOAD_MARKER "\n__RELAYSH_PAYLOAD__\n"
 #define PAYLOAD_MARKER_LEN 21
+#define POLICY_DENY_EXIT 77
 
 static unsigned char g_secret[32];
 static int g_srv = -1;
+
+// Exact-match check against the baked allowlist. Only compiled in when a
+// policy.conf was present at build time (relaysh-policy.h). The command
+// string must equal an entry byte-for-byte.
+#if RELAYSH_POLICY_PRESENT
+static int policy_allows(const char* cmd) {
+    for (size_t i = 0; relaysh_policy_allow[i] != NULL; i++)
+        if (strcmp(cmd, relaysh_policy_allow[i]) == 0) return 1;
+    return 0;
+}
+#endif
 
 // ------------------------------------------------------------------ helpers
 static int64_t now_ns(void) {
@@ -195,6 +215,17 @@ static void run_worker(int conn, const proto_keys* keys) {
     cmd[cmd_len] = 0;
     const unsigned char* payload = req + payload_off;
     size_t payload_len = total - payload_off;
+
+#if RELAYSH_POLICY_PRESENT
+    if (!policy_allows(cmd)) {
+        static const char deny_msg[] = "relaysh-daemon: command denied by policy\n";
+        proto_send_msg(conn, keys, 1, &sctr, PROTO_T_STDERR,
+                       (const unsigned char*)deny_msg, sizeof(deny_msg) - 1);
+        unsigned char dcb[4]; put_be32(dcb, POLICY_DENY_EXIT);
+        proto_send_msg(conn, keys, 1, &sctr, PROTO_T_END, dcb, 4);
+        free(cmd); free(req); close(conn); return;
+    }
+#endif
 
     int ofd = -1, efd = -1, ifd = -1;
     pid_t pid = spawn_command(cmd, &ofd, &efd, &ifd);
