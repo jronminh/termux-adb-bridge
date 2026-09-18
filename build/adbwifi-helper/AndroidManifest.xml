@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  adbwifi-helper: receiver-only. Deliberately has NO activity and NO
+  LAUNCHER intent-filter, so it never appears in the launcher / app
+  drawer. It is triggered by an explicit broadcast from Termux (or by the
+  system on boot); see EnableReceiver.java.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="local.adbwifi.helper">
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="30" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <application android:label="AdbWifiHelper" android:allowBackup="false">
+        <receiver android:name=".EnableReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="local.adbwifi.helper.ENABLE"/>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

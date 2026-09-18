@@ -1,0 +1,21 @@
+# Build output. build/out/ holds the compiled daemon/client/adbwire/APK;
+# build/out/.scratch/ holds the generated sources with the live secret baked
+# in during a build. Neither may ever be committed.
+build/out/
+
+# adbwifi-helper build inputs/artifacts.
+build/adbwifi-helper/build/
+build/adbwifi-helper/*.apk
+build/adbwifi-helper/*.idsig
+build/adbwifi-helper/debug.keystore
+build/adbwifi-helper/android.jar
+
+__pycache__/
+*.pyc
+
+# Local-only investigation docs - kept on disk for reference, key points
+# already distilled into README.md. Not meant for the public repo.
+docs/
+
+# Local scratch/planning notes - not meant for the public repo.
+TODO.md
