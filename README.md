@@ -83,6 +83,12 @@ and with the privilege in mind.
     the new daemon through the daemon that's already running (payload
     streaming), sweeps the old one, swaps and relaunches. Needs a live
     daemon matching the current build; `--no-build` skips the rebuild.
+  - Both store a **recovery pair** on success — the matching `client` and
+    `daemon` in `~/.local/share/relaysh/` (one `.prev` generation). A rebuild
+    rotates the secret and overwrites `build/out`, which would otherwise
+    leave a still-running old daemon unreachable; `bootstrap.sh` falls back
+    to this stored client to drive it. It carries the secret, so the
+    directory is kept `700`.
   - Compiles nothing. Run by hand, not from a scheduler.
 
 ## Policy & audit

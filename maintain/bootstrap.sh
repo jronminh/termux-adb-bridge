@@ -32,6 +32,12 @@ CLIENT="$OUT_DIR/relaysh-client"
 DSH_SRC="$REPO_ROOT/bin/dsh"
 DSH_DEST="${PREFIX:-/data/data/com.termux/files/usr}/bin/dsh"
 DAEMON_REMOTE="/data/local/tmp/relaysh-daemon"
+# Recovery pair persisted by deploy.sh/bootstrap.sh: the client (and daemon)
+# that match the running daemon, so a rebuild that overwrites build/out
+# can't lock us out of a daemon that's still alive.
+STORE_DIR="${RELAYSH_STORE_DIR:-$HOME/.local/share/relaysh}"
+STORE_CLIENT="$STORE_DIR/client"
+STORE_DAEMON="$STORE_DIR/daemon"
 
 NO_BUILD=0
 for arg in "$@"; do
@@ -51,14 +57,32 @@ TMP="${TMPDIR:-/tmp}/relaysh-bootstrap.$$"
 mkdir -p "$TMP" || die "could not create $TMP"
 trap 'rm -rf "$TMP"' EXIT
 
-# The driver is a copy of the client that matches the CURRENTLY running
+# The driver is a copy of a client that matches the CURRENTLY running
 # daemon — captured before any rebuild, since a rebuild bakes in a new
-# secret/port the old daemon can't speak.
+# secret/port the old daemon can't speak. Prefer the fresh build/out client
+# (matches when nothing was rebuilt yet), then fall back to the persisted
+# pair store (matches when build/out was already rotated by a rebuild).
 DRIVER="$TMP/driver"
-cp "$CLIENT" "$DRIVER" && chmod 700 "$DRIVER" || die "could not stage driver client"
+client_alive() { [ -x "$1" ] && timeout 10 "$1" id >/dev/null 2>&1; }
+if client_alive "$CLIENT"; then
+    DRIVER_SRC="$CLIENT"
+elif client_alive "$STORE_CLIENT"; then
+    DRIVER_SRC="$STORE_CLIENT"
+    log "build/out client does not match the daemon - using stored pair client"
+else
+    die "running daemon not reachable with either $CLIENT or $STORE_CLIENT - use maintain/deploy.sh (adbwire) instead"
+fi
+cp "$DRIVER_SRC" "$DRIVER" && chmod 700 "$DRIVER" || die "could not stage driver client"
 
-driver_alive() { timeout 10 "$DRIVER" id >/dev/null 2>&1; }
-driver_alive || die "running daemon not reachable with the current client - use maintain/deploy.sh (adbwire) instead"
+store_pair() {
+    mkdir -p "$STORE_DIR" 2>/dev/null || { log "could not create $STORE_DIR (skipping store)"; return 0; }
+    chmod 700 "$STORE_DIR" 2>/dev/null
+    [ -f "$STORE_CLIENT" ] && cp -f "$STORE_CLIENT" "$STORE_CLIENT.prev" 2>/dev/null
+    [ -f "$STORE_DAEMON" ] && cp -f "$STORE_DAEMON" "$STORE_DAEMON.prev" 2>/dev/null
+    install -m 700 "$CLIENT" "$STORE_CLIENT" 2>/dev/null
+    install -m 700 "$DAEMON" "$STORE_DAEMON" 2>/dev/null
+    log "stored paired client+daemon -> $STORE_DIR"
+}
 
 # Install the local dsh command first (independent of the device step).
 if [ -f "$DSH_SRC" ]; then
@@ -107,6 +131,7 @@ sleep 1
 
 if timeout 15 "$CLIENT" id 2>/dev/null | grep -q '^uid='; then
     log "bootstrap complete: $(timeout 15 "$CLIENT" id 2>/dev/null)"
+    store_pair
 else
     die "new daemon did not come up - recover with maintain/deploy.sh (adbwire), or check: $CLIENT 'ps -A | grep relaysh-daemon'"
 fi
