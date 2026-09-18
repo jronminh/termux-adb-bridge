@@ -1,5 +1,20 @@
 # termux-adb-bridge
 
+> **CAUTION — READ BEFORE YOU INSTALL**
+>
+> This gives Termux the Android **`shell` UID** and keeps it available at
+> all times. That is a serious privilege tier, not a toy: anything running
+> as Termux can then inject input events, change secure settings, dump
+> system state, list and control apps, and run nearly anything the ADB
+> `shell` can. It is **not** root, but treat it as close to one.
+>
+> Concretely, that means: **only run code you trust in Termux**, because a
+> malicious script, a compromised `$PREFIX`, or a leaked daemon binary
+> (which carries the shared secret) hands an attacker `shell` on your
+> device. Do **not** expose the daemon beyond loopback, do **not** wire it
+> into unattended automation, and **uninstall/stop the daemon when you no
+> longer need it.** You accept this risk by installing it.
+
 Run commands at Android's `shell` UID from Termux, without Shizuku.
 Bootstrapped once over ADB Wireless Debugging (Android 11+), then
 self-healing from Termux alone — no `adb`, no laptop, no cable after setup.
