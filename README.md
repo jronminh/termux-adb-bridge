@@ -57,7 +57,8 @@ build/out/adbwire --pair <code>   # one-time; <code> is shown on the device
 maintain/deploy.sh                # push + launch + verify the daemon
 ```
 
-Check it: `build/out/relaysh-client 'id'` should print `uid=2000(shell)`.
+Check it: `dsh 'id'` (installed by `deploy.sh`; `build/out/relaysh-client
+'id'` works too) should print `uid=2000(shell)`.
 
 `maintain/deploy.sh` is a deliberate, human-run action — it (re)starts a
 `shell`-UID daemon. Don't point a scheduler at it; keep running it by hand
@@ -67,7 +68,8 @@ and with the privilege in mind.
 
 - **`build/`** — compiles all artifacts into `build/out/`:
   - `build.sh` — generates one random secret + port and bakes them into
-    **both** the daemon and the client in the same run.
+    **both** the daemon and the client in the same run, along with any
+    optional `policy.conf` (see [Policy & audit](#policy--audit)).
   - `relaysh/` — the privilege bridge: `relaysh-daemon.c`,
     `relaysh-client.c`, the v3 wire protocol, and ChaCha20/HMAC-SHA256.
   - `adbwire/` — a minimal OpenSSL-only ADB client for Wireless Debugging:
@@ -93,37 +95,44 @@ and with the privilege in mind.
 
 ## Policy & audit
 
-Two optional layers for using the bridge in automation, both off by default.
+Two optional layers for using the bridge in automation. Policy is off by
+default; audit is on by default. Neither changes how the bridge works when
+unused.
 
-**Policy (exact-match allowlist).** Put `allow <exact command>` lines in
-`build/relaysh/policy.conf` (see `policy.conf.example`) before running
+**Policy (exact-match allowlist) — off by default.** With no
+`build/relaysh/policy.conf`, every command is allowed, exactly as before.
+Add `allow <exact command>` lines (see `policy.conf.example`) and run
 `build/build.sh`; the list is baked into **both** binaries, same as the
-secret. With a policy present the daemon refuses anything not listed
-byte-for-byte, replying with stderr `command denied by policy` and exit
-**77**. With no `policy.conf` (the default) everything is allowed, as before.
+secret. The daemon then refuses anything not listed byte-for-byte, replying
+with stderr `command denied by policy` and exit **77**.
 
-Matching is exact on purpose: commands run through `sh -c`, so a prefix or
-glob rule (`allow dumpsys*`) is bypassable with `;`, `&&`, or `$(...)` — a
-prefix allowlist would be a bug, not a shortcut. The trade-off is that
-allowed commands can't take variable arguments; parameterized automation
-(e.g. `input tap <x> <y>`) will need a future argv/no-shell request mode.
-
+- Matching is exact on purpose: commands run through `sh -c`, so a prefix or
+  glob rule (`allow dumpsys*`) is bypassable with `;`, `&&`, or `$(...)` — a
+  prefix allowlist would be a bug, not a shortcut.
+- The cost of that soundness: an allowed command can't take variable
+  arguments. Parameterized automation (`input tap <x> <y>`, `logcat -t <n>`)
+  is denied until a future argv/no-shell request mode lands.
 - `relaysh-client --policy` (and `dsh --policy`) prints the baked list
   without contacting the daemon.
 
-**Audit log.** Every non-`--check` call appends one line to
-`~/.local/share/relaysh/audit.log` (override with `RELAYSH_AUDIT_LOG`,
-disable with `--no-audit`):
+**Audit log — on by default.** Every non-`--check` call appends one line to
+`~/.local/share/relaysh/audit.log`:
 
 ```
 2026-09-18T18:54:53 code=0 decision=allow ms=74 cmd=id
 2026-09-18T18:54:53 code=77 decision=deny ms=46 cmd=id; echo pwned
 ```
 
-It's written client-side (Termux UID), so it survives the daemon being down —
-useful for tracing what actually ran. It is a **trace, not tamper-proof
-evidence**: the secret is shared, so a modified client could omit entries.
-Rotates at 1 MiB to `audit.log.1`. Read it with `dsh --audit [N]`.
+- Written client-side (Termux UID), so it survives the daemon being down —
+  useful for tracing what actually ran.
+- A **trace, not tamper-proof evidence**: the secret is shared, so a modified
+  client could omit entries.
+- Override the path with `RELAYSH_AUDIT_LOG`, skip one call with
+  `--no-audit`, read it with `dsh --audit [N]`. Rotates at 1 MiB to
+  `audit.log.1`.
+
+Applying or changing a policy is a `maintain/deploy.sh` job, not
+`bootstrap.sh` — see the last bullet under Known limitations.
 
 ## Requirements
 
@@ -147,6 +156,13 @@ Rotates at 1 MiB to `audit.log.1`. Read it with `dsh --audit [N]`.
 - **Pairing can appear to fail for three reasons**: stale host-side `adb`
   state (`adb kill-server`), the on-screen touch-gate, or genuine trust
   revocation (rare).
+- **A strict policy blocks `bootstrap.sh`.** Its push/sweep commands run
+  *through* the daemon, so an active policy denies them — and on some devices
+  Wireless Debugging can't be re-armed in software (the toggle reverts to
+  off). Apply or remove a policy with `maintain/deploy.sh` (adbwire), which
+  doesn't go through the daemon; allowlisting the control commands instead
+  would defeat the policy (push + sweep can run an arbitrary binary as
+  `shell`).
 
 ## References
 
