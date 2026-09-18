@@ -23,6 +23,8 @@ self-healing from Termux alone — no `adb`, no laptop, no cable after setup.
 Developer Options and pairing Wireless Debugging yourself. It is not, and
 cannot be, a remote exploit.
 
+![shell UID from Termux via termux-adb-bridge](assets/demo.png)
+
 ## How it works
 
 1. **One-time bootstrap.** `adb shell` (via `adbwire`, no `android-tools`)
