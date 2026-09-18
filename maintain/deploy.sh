@@ -10,6 +10,9 @@
 # config file: (re)deploy = stop any running daemon, push the new binary,
 # launch it, verify with the matching client.
 #
+# It also installs the `dsh` wrapper (bin/dsh) into $PREFIX/bin, so there is
+# a stable user-facing command over the client.
+#
 # Usage:
 #   ./deploy.sh            # push + (re)launch the daemon, then verify
 #
@@ -25,13 +28,15 @@ CLIENT="$OUT_DIR/relaysh-client"
 ADBWIRE="$OUT_DIR/adbwire"
 DAEMON_REMOTE="/data/local/tmp/relaysh-daemon"
 DAEMON_REMOTE_NEW="$DAEMON_REMOTE.new"
+DSH_SRC="$REPO_ROOT/bin/dsh"
+DSH_DEST="${PREFIX:-/data/data/com.termux/files/usr}/bin/dsh"
 
 log() { printf '[maintain] %s\n' "$1" >&2; }
 die() { log "$1"; exit 1; }
 
 for arg in "$@"; do
     case "$arg" in
-        -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown argument: $arg (see --help)" >&2; exit 1 ;;
     esac
 done
@@ -39,6 +44,16 @@ done
 [ -x "$DAEMON" ] || die "no daemon at $DAEMON - run build/build.sh first"
 [ -x "$CLIENT" ] || die "no client at $CLIENT - run build/build.sh first"
 [ -x "$ADBWIRE" ] || die "no adbwire at $ADBWIRE - run build/build.sh first"
+
+# Install the local `dsh` command first: it's independent of the device
+# deploy below, so it's there even if Wireless Debugging can't be reached.
+if [ -f "$DSH_SRC" ]; then
+    if install -m 755 "$DSH_SRC" "$DSH_DEST" 2>/dev/null; then
+        log "installed dsh -> $DSH_DEST"
+    else
+        log "could not install dsh to $DSH_DEST (skipping)"
+    fi
+fi
 
 daemon_alive() { "$CLIENT" id 2>/dev/null | grep -q '^uid='; }
 

@@ -1,0 +1,152 @@
+# dsh - one-keyword wrapper over relaysh-client (termux-adb-bridge): sends
+# a shell command to the relaysh daemon (running at `shell` UID) and prints
+# its combined stdout+stderr, exiting with the remote command's real code.
+# See ~/termux-adb-bridge/README.md for the daemon.
+
+RELAYSH_CLIENT="${RELAYSH_CLIENT:-$HOME/termux-adb-bridge/build/out/relaysh-client}"
+
+usage() {
+    cat <<'EOF'
+Usage: dsh [OPTIONS] COMMAND...
+       dsh -c 'COMMAND'
+       echo 'COMMAND' | dsh -f -
+
+Run COMMAND at the relaysh daemon's UID (normally `shell`) and print its
+output. dsh exits with the remote command's real exit code (128+signal
+for a signal death); a connection/auth-level failure that never ran the
+command exits nonzero with the client's diagnostic on stderr.
+
+Options:
+  -c CMD         Run CMD instead of the positional arguments.
+  -f FILE        Read the command from FILE ("-" reads stdin).
+  -p FILE        Stream FILE's bytes to the command's stdin (the v2
+                 payload marker; requires a v2 daemon).
+  -n, --no-stdin Never read stdin (fail if no command was given) - for
+                 scripts that must not block on an accidental prompt.
+  -q, --quiet    Suppress dsh's own status/error messages.
+  -v, --verbose  Print the exact command being sent, to stderr.
+  --check        Health check: run `id` against the daemon.
+  --policy       Print the daemon's exact-match allowlist and exit.
+  --audit [N]    Show the last N audit-log lines (default 20) and exit.
+  -h, --help     Show this help.
+
+Examples:
+  dsh id
+  dsh pm list packages -3
+  dsh -c 'dumpsys battery | grep level'
+  echo 'settings get system screen_brightness' | dsh -f -
+  dsh -p app.apk 'cat > /data/local/tmp/app.apk && ls -l'
+  dsh --policy
+  dsh --audit 50
+EOF
+}
+
+quiet=0
+verbose=0
+no_stdin=0
+policy=0
+audit_lines=""
+payload_path=""
+cmd=""
+cmd_set=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -c)
+            [ $# -ge 2 ] || { echo "dsh: -c requires an argument" >&2; exit 2; }
+            cmd="$2"; cmd_set=1; shift 2 ;;
+        -f)
+            [ $# -ge 2 ] || { echo "dsh: -f requires an argument" >&2; exit 2; }
+            if [ "$2" = "-" ]; then
+                cmd="$(cat)"
+            else
+                cmd="$(cat -- "$2")" || exit 2
+            fi
+            cmd_set=1; shift 2 ;;
+        -p)
+            [ $# -ge 2 ] || { echo "dsh: -p requires an argument" >&2; exit 2; }
+            payload_path="$2"; shift 2 ;;
+        -q|--quiet) quiet=1; shift ;;
+        -v|--verbose) verbose=1; shift ;;
+        -n|--no-stdin) no_stdin=1; shift ;;
+        --check) cmd="id"; cmd_set=1; shift ;;
+        --policy) policy=1; shift ;;
+        --audit)
+            shift
+            audit_lines=20
+            case "${1:-}" in
+                ''|*[!0-9]*) ;;
+                *) audit_lines="$1"; shift ;;
+            esac ;;
+        -h|--help) usage; exit 0 ;;
+        --) shift; break ;;
+        -*)
+            echo "dsh: unknown option: $1" >&2
+            usage >&2
+            exit 2 ;;
+        *)
+            break ;;
+    esac
+done
+
+if [ "$policy" -eq 1 ]; then
+    if [ ! -f "$RELAYSH_CLIENT" ]; then
+        [ "$quiet" -eq 1 ] || echo "dsh: relaysh-client not found at $RELAYSH_CLIENT" >&2
+        exit 127
+    fi
+    exec "$RELAYSH_CLIENT" --policy
+fi
+
+if [ -n "$audit_lines" ]; then
+    log="${RELAYSH_AUDIT_LOG:-$HOME/.local/share/relaysh/audit.log}"
+    if [ ! -f "$log" ]; then
+        [ "$quiet" -eq 1 ] || echo "dsh: no audit log at $log" >&2
+        exit 0
+    fi
+    tail -n "$audit_lines" "$log"
+    exit 0
+fi
+
+if [ "$cmd_set" -eq 0 ]; then
+    if [ $# -gt 0 ]; then
+        cmd="$*"
+    elif [ "$no_stdin" -eq 0 ] && [ ! -t 0 ]; then
+        cmd="$(cat)"
+    else
+        usage >&2
+        exit 2
+    fi
+fi
+
+if [ -z "$cmd" ]; then
+    [ "$quiet" -eq 1 ] || echo "dsh: empty command, nothing to send" >&2
+    exit 2
+fi
+
+if [ ! -f "$RELAYSH_CLIENT" ]; then
+    [ "$quiet" -eq 1 ] || echo "dsh: relaysh-client not found at $RELAYSH_CLIENT" >&2
+    exit 127
+fi
+
+[ "$verbose" -eq 1 ] && echo "+ $cmd" >&2
+
+# Stream stdout live while capturing only stderr, so dsh can add a
+# friendlier message on connection/auth failure without touching the
+# remote command's own output.
+exec 3>&1
+if [ -n "$payload_path" ]; then
+    err="$("$RELAYSH_CLIENT" -p "$payload_path" "$cmd" 2>&1 1>&3)"
+else
+    err="$("$RELAYSH_CLIENT" "$cmd" 2>&1 1>&3)"
+fi
+rc=$?
+exec 3>&-
+
+if [ "$rc" -ne 0 ]; then
+    if [ "$quiet" -ne 1 ] && [ -n "$err" ]; then
+        echo "dsh: $err" >&2
+    fi
+    exit "$rc"
+fi
+
+exit 0
