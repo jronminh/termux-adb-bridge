@@ -185,6 +185,12 @@ ones:
   and this [Samsung developer forum thread](https://forum.developer.samsung.com/t/wireless-debugging-or-why-must-samsung-break-things-via-updates/28200)
   — Wireless-Debugging behavior and OEM variation.
 
+## Credits
+
+Built with AI assistance from **Claude** (Anthropic) and **DeepSeek**
+(`deepseek-v4-flash`, via opencode). All design decisions, review, and
+testing are the maintainer's.
+
 ## License
 
 [GPL-3.0](LICENSE) — any fork or derivative must stay open source under the
