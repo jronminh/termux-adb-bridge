@@ -187,9 +187,11 @@ ones:
 
 ## Credits
 
-Built with AI assistance from **Claude** (Anthropic) and **DeepSeek**
-(`deepseek-v4-flash`, via opencode). All design decisions, review, and
-testing are the maintainer's.
+Built with AI assistance from **Claude Sonnet 5** (via
+[claude-code-termux-native](https://github.com/jronminh/claude_code_termux_native))
+and **DeepSeek** (`deepseek-v4-flash`, via
+[opencode-code-termux-native](https://github.com/jronminh/opencode-code-termux-native)).
+All design decisions, review, and testing are the maintainer's.
 
 ## License
 
